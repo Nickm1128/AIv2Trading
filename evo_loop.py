@@ -75,6 +75,8 @@ def evolve(pop_size=10, generations=30, base_neurons=10, mutation_rate=0.1, muta
             tournament_scores = [(agent, score) for agent, score in agent_scores 
                                if agent in tournament_candidates]
             parent = max(tournament_scores, key=lambda x: x[1])[0]
+            if gen % 10 == 0 and _ == range(pop_size - n_survivors)[0]:
+                print(f'Best agent neuron count: {len(parent.neurons)}')
             child = mutate_agent(parent, mutation_rate, mutation_strength)
             children.append(child)
         
@@ -202,4 +204,4 @@ def evolve(pop_size=10, generations=30, base_neurons=10, mutation_rate=0.1, muta
     return best_agent, final_results
 
 if __name__ == '__main__':
-    evolve(generations=10)
+    evolve(generations=100_000)
