@@ -35,7 +35,7 @@ def create_population(n_agents, n_neurons):
 
 
 def evolve(pop_size=10, generations=30, base_neurons=10, mutation_rate=0.1,
-           mutation_strength=0.2, processes=None):
+           mutation_strength=0.2, processes=4):
     """Run the evolutionary loop.
 
     Parameters
