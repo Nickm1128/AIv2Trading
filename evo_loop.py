@@ -1,9 +1,10 @@
-from Agent import Agent 
+from Agent import Agent
 import random
 import numpy as np
-import matplotlib.pyplot as plt 
+import matplotlib.pyplot as plt
 import pickle
 from pathlib import Path
+import multiprocessing
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 
@@ -11,12 +12,55 @@ from data_generation import generate_synthetic_data, generate_multiple_scenarios
 from agent_eval import evaluate_agent
 from mutations import mutate_agent
 
+
+def _evaluate_agent_worker(args):
+    """Helper function for multiprocessing Pool."""
+    agent, scenarios = args
+    scenario_scores = []
+    for scenario in scenarios:
+        try:
+            final_value, _ = evaluate_agent(agent, scenario)
+            buy_hold_return = scenario[-1] / scenario[0]
+            agent_return = final_value / 1000.0
+            relative_performance = agent_return / buy_hold_return
+            scenario_scores.append(relative_performance)
+        except Exception:
+            scenario_scores.append(0.5)
+
+    median_score = np.median(scenario_scores)
+    return agent, median_score
+
 def create_population(n_agents, n_neurons):
     return [Agent(f"agent_{i}", n_neurons) for i in range(n_agents)]
 
 
-def evolve(pop_size=10, generations=30, base_neurons=10, mutation_rate=0.1, mutation_strength=0.2):
+def evolve(pop_size=10, generations=30, base_neurons=10, mutation_rate=0.1,
+           mutation_strength=0.2, processes=None):
+    """Run the evolutionary loop.
+
+    Parameters
+    ----------
+    pop_size : int
+        Number of agents in the population.
+    generations : int
+        Number of generations to evolve.
+    base_neurons : int
+        Starting neuron count for each agent.
+    mutation_rate : float
+        Probability of mutating a synapse or neuron parameter.
+    mutation_strength : float
+        Magnitude of mutation applied.
+    processes : int or None
+        Number of processes to use for evaluation. ``None`` defaults to using
+        all available CPUs.
+    """
+
     population = [Agent(f"agent_{i}", base_neurons) for i in range(pop_size)]
+
+    if processes is None:
+        processes = multiprocessing.cpu_count()
+
+    pool = multiprocessing.Pool(processes=processes) if processes > 1 else None
     
     # Track performance over generations
     best_scores_history = []
@@ -25,26 +69,17 @@ def evolve(pop_size=10, generations=30, base_neurons=10, mutation_rate=0.1, muta
     for gen in range(generations):
         # Generate multiple fresh scenarios each generation to prevent overfitting
         scenarios = generate_multiple_scenarios(n_scenarios=3, length=200)
-        
+
         # Evaluate each agent across all scenarios
-        agent_scores = []
-        for agent in population:
-            scenario_scores = []
-            for scenario in scenarios:
-                try:
-                    final_value, _ = evaluate_agent(agent, scenario)
-                    # Calculate return relative to buy-and-hold
-                    buy_hold_return = scenario[-1] / scenario[0]  # Price appreciation
-                    agent_return = final_value / 1000.0  # Agent's return (assuming 1000 initial cash)
-                    relative_performance = agent_return / buy_hold_return
-                    scenario_scores.append(relative_performance)
-                except Exception as e:
-                    # Handle any evaluation errors gracefully
-                    scenario_scores.append(0.5)  # Poor performance if error occurs
-            
-            # Use median performance to reduce impact of outliers
-            median_score = np.median(scenario_scores)
-            agent_scores.append((agent, median_score))
+        if pool:
+            agent_scores = pool.map(
+                _evaluate_agent_worker,
+                [(agent, scenarios) for agent in population]
+            )
+        else:
+            agent_scores = [
+                _evaluate_agent_worker((agent, scenarios)) for agent in population
+            ]
         
         # Sort by performance (higher is better)
         agent_scores.sort(key=lambda x: x[1], reverse=True)
@@ -200,7 +235,11 @@ def evolve(pop_size=10, generations=30, base_neurons=10, mutation_rate=0.1, muta
     plt.tight_layout()
     fig.savefig(PROJECT_ROOT / "evolution_summary.png", dpi=300)
     plt.show()
-    
+
+    if pool:
+        pool.close()
+        pool.join()
+
     return best_agent, final_results
 
 if __name__ == '__main__':
