@@ -40,8 +40,8 @@ def create_population(n_agents, n_neurons):
     return [Agent(f"agent_{i}", n_neurons) for i in range(n_agents)]
 
 
-def evolve(pop_size=5, generations=10_000, base_neurons=10, mutation_rate=0.1,
-           mutation_strength=0.1, processes=None, population_path=None):
+def evolve(pop_size=3, generations=10_000, base_neurons=10, mutation_rate=0.1,
+           mutation_strength=0.1, processes=3, population_path=None):
     """Run the evolutionary loop.
 
     Parameters
@@ -132,7 +132,7 @@ def evolve(pop_size=5, generations=10_000, base_neurons=10, mutation_rate=0.1,
                 _, p_val = ttest_rel(child_scores, parent_scores)
             except Exception:
                 p_val = 1.0
-            if child_score > score and p_val < 0.05:
+            if child_score > score and p_val < 0.5:
                 survivors.append(child)
             else:
                 survivors.append(agent)
@@ -153,7 +153,7 @@ def evolve(pop_size=5, generations=10_000, base_neurons=10, mutation_rate=0.1,
     
     # Generate completely fresh scenarios for final evaluation from the
     # reserved test data
-    final_scenarios = sample_price_windows(test_df, n_samples=5, window_size=300)
+    final_scenarios = sample_price_windows(test_df, n_samples=3, window_size=300)
     
     # Evaluate top 3 agents
     top_agents = [agent for agent, _ in agent_scores[:3]]
@@ -197,7 +197,7 @@ def evolve(pop_size=5, generations=10_000, base_neurons=10, mutation_rate=0.1,
     
     # --- Save best agent and results ---
     best_agent = final_results[0]['agent']
-    with open(PROJECT_ROOT / "final_population.pkl", "wb") as f:
+    with open(PROJECT_ROOT / "final_population_two.pkl", "wb") as f:
         pickle.dump(population, f)
 
     with open(PROJECT_ROOT / "best_agent.pkl", "wb") as f:
@@ -259,7 +259,7 @@ def evolve(pop_size=5, generations=10_000, base_neurons=10, mutation_rate=0.1,
     axes[1, 1].grid(True, alpha=0.3)
     
     plt.tight_layout()
-    fig.savefig(PROJECT_ROOT / "evolution_summary.png", dpi=300)
+    fig.savefig(PROJECT_ROOT / "evolution_summary_two.png", dpi=300)
     plt.show()
 
     if pool:
