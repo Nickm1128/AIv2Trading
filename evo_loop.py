@@ -40,8 +40,8 @@ def create_population(n_agents, n_neurons):
     return [Agent(f"agent_{i}", n_neurons) for i in range(n_agents)]
 
 
-def evolve(pop_size=10, generations=10_000, base_neurons=10, mutation_rate=0.1,
-           mutation_strength=0.1, processes=None):
+def evolve(pop_size=5, generations=10_000, base_neurons=10, mutation_rate=0.1,
+           mutation_strength=0.1, processes=None, population_path=None):
     """Run the evolutionary loop.
 
     Parameters
@@ -61,7 +61,12 @@ def evolve(pop_size=10, generations=10_000, base_neurons=10, mutation_rate=0.1,
         all available CPUs.
     """
 
-    population = [Agent(f"agent_{i}", base_neurons) for i in range(pop_size)]
+    if population_path:
+        with open(population_path, "r") as f:
+            population = pickle.load(f)
+            population = population[:pop_size]
+    else:
+        population = [Agent(f"agent_{i}", base_neurons) for i in range(pop_size)]
 
     if processes is None:
         processes = multiprocessing.cpu_count()
@@ -77,7 +82,7 @@ def evolve(pop_size=10, generations=10_000, base_neurons=10, mutation_rate=0.1,
     avg_scores_history = []
     
     for gen in range(generations):
-        if gen % 100 == 0:
+        if gen % 20 == 0:
             best_scores_history = []
             avg_scores_history = []
             all_windows = sample_price_windows(train_df, n_samples=3, window_size=300)
@@ -264,4 +269,4 @@ def evolve(pop_size=10, generations=10_000, base_neurons=10, mutation_rate=0.1,
     return best_agent, final_results
 
 if __name__ == '__main__':
-    evolve()
+    evolve(population_path=PROJECT_ROOT / "final_population.pkl")
