@@ -40,8 +40,8 @@ def create_population(n_agents, n_neurons):
     return [Agent(f"agent_{i}", n_neurons) for i in range(n_agents)]
 
 
-def evolve(pop_size=10, generations=10_000, base_neurons=10, mutation_rate=0.01,
-           mutation_strength=0.1, processes=8):
+def evolve(pop_size=10, generations=10_000, base_neurons=10, mutation_rate=0.1,
+           mutation_strength=0.1, processes=3):
     """Run the evolutionary loop.
 
     Parameters
@@ -70,7 +70,7 @@ def evolve(pop_size=10, generations=10_000, base_neurons=10, mutation_rate=0.01,
 
     # Load real crypto data once at the start and split into train/test
     train_df, test_df = load_real_crypto_data(split=True)
-    all_windows = sample_price_windows(train_df, n_samples=150, window_size=300)
+    all_windows = sample_price_windows(train_df, n_samples=3, window_size=300)
 
     # Track performance over generations
     best_scores_history = []
