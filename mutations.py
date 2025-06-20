@@ -36,7 +36,7 @@ def mutate_agent(original_agent, mutation_rate, mutation_strength):
     MIN_NEURONS = 4 
 
     if random.random() < PRUNING_CHANCE:
-        neurons_to_prune_count = random.randint(0, PRUNING_NEURON_MAX)
+        neurons_to_prune_count = 1#random.randint(0, PRUNING_NEURON_MAX)
         actual_neurons_to_prune = min(neurons_to_prune_count, len(mutated_agent.neurons) - MIN_NEURONS)
         
         if actual_neurons_to_prune > 0:
