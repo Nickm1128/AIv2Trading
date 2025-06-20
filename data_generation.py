@@ -103,14 +103,26 @@ def normalize_window(window):
     return diffs / (np.std(diffs) + 1e-6)
 
 
-def load_real_crypto_data():
+def load_real_crypto_data(split=False, test_fraction=0.25):
     """Load time-synchronised crypto prices from the remote database.
+
+    Parameters
+    ----------
+    split : bool, optional
+        If ``True`` the returned value is a tuple ``(train_df, test_df)`` where
+        the last ``test_fraction`` of the data is reserved for testing.  If
+        ``False`` only the merged DataFrame is returned.
+    test_fraction : float, optional
+        Fraction of the most recent data to reserve for testing when
+        ``split`` is ``True``.
 
     Returns
     -------
-    pandas.DataFrame
-        DataFrame indexed by timestamp containing closing prices for
-        BTC, ETH, ADA, XRP and SOL.
+    pandas.DataFrame or Tuple[pandas.DataFrame, pandas.DataFrame]
+        When ``split`` is ``False`` a single DataFrame indexed by timestamp
+        containing closing prices for BTC, ETH, ADA, XRP and SOL is returned.
+        If ``split`` is ``True`` the DataFrame is split chronologically and a
+        tuple ``(train_df, test_df)`` is returned.
     """
     import pandas as pd
     from sqlalchemy import create_engine
@@ -152,9 +164,15 @@ def load_real_crypto_data():
         close_dfs.append(df)
 
     merged = pd.concat(close_dfs, axis=1, join="inner")
-    merged = merged.dropna()
+    merged = merged.dropna().sort_index()
 
-    return merged
+    if not split:
+        return merged
+
+    split_idx = int(len(merged) * (1 - test_fraction))
+    train_df = merged.iloc[:split_idx]
+    test_df = merged.iloc[split_idx:]
+    return train_df, test_df
 
 
 def sample_price_windows(price_df, n_samples=150, window_size=300):

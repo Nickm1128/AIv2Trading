@@ -68,9 +68,9 @@ def evolve(pop_size=10, generations=10_000, base_neurons=10, mutation_rate=0.01,
 
     pool = multiprocessing.Pool(processes=processes) if processes > 1 else None
 
-    # Load real crypto data once at the start
-    price_df = load_real_crypto_data()
-    all_windows = sample_price_windows(price_df, n_samples=150, window_size=300)
+    # Load real crypto data once at the start and split into train/test
+    train_df, test_df = load_real_crypto_data(split=True)
+    all_windows = sample_price_windows(train_df, n_samples=150, window_size=300)
 
     # Track performance over generations
     best_scores_history = []
@@ -141,8 +141,9 @@ def evolve(pop_size=10, generations=10_000, base_neurons=10, mutation_rate=0.01,
     print("FINAL EVALUATION")
     print("="*50)
     
-    # Generate completely fresh scenarios for final evaluation from real data
-    final_scenarios = sample_price_windows(price_df, n_samples=5, window_size=300)
+    # Generate completely fresh scenarios for final evaluation from the
+    # reserved test data
+    final_scenarios = sample_price_windows(test_df, n_samples=5, window_size=300)
     
     # Evaluate top 3 agents
     top_agents = [agent for agent, _ in agent_scores[:3]]
