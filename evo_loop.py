@@ -62,7 +62,7 @@ def evolve(pop_size=5, generations=10_000, base_neurons=10, mutation_rate=0.1,
     """
 
     if population_path:
-        with open(population_path, "r") as f:
+        with open(population_path, "rb") as f:
             population = pickle.load(f)
             population = population[:pop_size]
     else:
