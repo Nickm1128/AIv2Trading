@@ -269,4 +269,4 @@ def evolve(pop_size=3, generations=10_000, base_neurons=10, mutation_rate=0.1,
     return best_agent, final_results
 
 if __name__ == '__main__':
-    evolve(population_path=PROJECT_ROOT / "final_population.pkl")
+    evolve()
