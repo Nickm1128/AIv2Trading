@@ -101,3 +101,71 @@ def add_market_microstructure_noise(prices, noise_level=0.001):
 def normalize_window(window):
     diffs = np.diff(window)
     return diffs / (np.std(diffs) + 1e-6)
+
+
+def load_real_crypto_data():
+    """Load time-synchronised crypto prices from the remote database.
+
+    Returns
+    -------
+    pandas.DataFrame
+        DataFrame indexed by timestamp containing closing prices for
+        BTC, ETH, ADA, XRP and SOL.
+    """
+    import pandas as pd
+    from sqlalchemy import create_engine
+
+    db_url = (
+        "postgresql://technical_ping_db_user:"
+        "y0YrjDroozyBP5kFykBPYOTE4EjDdhQK@"
+        "dpg-d0j718buibrs73co3eag-a.singapore-postgres.render.com/technical_ping_db"
+    )
+    engine = create_engine(db_url)
+
+    tables = [
+        "crypto_prices_BTC_usd",
+        "crypto_prices_ETH_usd",
+        "crypto_prices_ADA_usd",
+        "crypto_prices_XRP_usd",
+        "crypto_prices_SOL_usd",
+    ]
+    table_prefix = "crypto_prices_"
+
+    close_dfs = []
+
+    for table in tables:
+        with engine.connect() as conn:
+            query = f"SELECT timestamp, close FROM {table}"
+            df = pd.read_sql(query, con=conn)
+
+        if "timestamp" not in df.columns or "close" not in df.columns:
+            continue
+
+        df["timestamp"] = pd.to_datetime(df["timestamp"])
+        df = df.sort_values("timestamp").dropna()
+        df = df.drop_duplicates(subset="timestamp")
+        df = df.set_index("timestamp")
+
+        name = table[len(table_prefix) :].lower().replace("_usd", "")
+        df = df.rename(columns={"close": name})
+
+        close_dfs.append(df)
+
+    merged = pd.concat(close_dfs, axis=1, join="inner")
+    merged = merged.dropna()
+
+    return merged
+
+
+def sample_price_windows(price_df, n_samples=150, window_size=300):
+    """Return a list of price windows from a merged price DataFrame."""
+    if len(price_df) < window_size:
+        raise ValueError("Not enough data for the requested window size")
+
+    samples = []
+    max_start = len(price_df) - window_size
+    for _ in range(n_samples):
+        start = np.random.randint(0, max_start + 1)
+        samples.append(price_df.iloc[start : start + window_size])
+
+    return samples

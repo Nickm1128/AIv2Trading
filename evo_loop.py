@@ -8,7 +8,10 @@ import multiprocessing
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 
-from data_generation import generate_synthetic_data, generate_multiple_scenarios
+from data_generation import (
+    load_real_crypto_data,
+    sample_price_windows,
+)
 from agent_eval import evaluate_agent
 from mutations import mutate_agent
 
@@ -19,23 +22,26 @@ def _evaluate_agent_worker(args):
     scenario_scores = []
     for scenario in scenarios:
         try:
-            final_value, _ = evaluate_agent(agent, scenario)
-            buy_hold_return = scenario[-1] / scenario[0]
-            agent_return = final_value / 1000.0
-            relative_performance = agent_return / buy_hold_return
-            scenario_scores.append(relative_performance)
+            coin_scores = []
+            for coin in scenario.columns:
+                prices = scenario[coin].values
+                final_value, _ = evaluate_agent(agent, prices)
+                buy_hold_return = prices[-1] / prices[0]
+                agent_return = final_value / 1000.0
+                coin_scores.append(agent_return / buy_hold_return)
+            scenario_scores.append(np.mean(coin_scores))
         except Exception:
             scenario_scores.append(0.5)
 
     median_score = np.median(scenario_scores)
-    return agent, median_score
+    return agent, median_score, scenario_scores
 
 def create_population(n_agents, n_neurons):
     return [Agent(f"agent_{i}", n_neurons) for i in range(n_agents)]
 
 
-def evolve(pop_size=10, generations=30, base_neurons=10, mutation_rate=0.1,
-           mutation_strength=0.2, processes=8):
+def evolve(pop_size=10, generations=10_000, base_neurons=10, mutation_rate=0.01,
+           mutation_strength=0.1, processes=8):
     """Run the evolutionary loop.
 
     Parameters
@@ -61,25 +67,31 @@ def evolve(pop_size=10, generations=30, base_neurons=10, mutation_rate=0.1,
         processes = multiprocessing.cpu_count()
 
     pool = multiprocessing.Pool(processes=processes) if processes > 1 else None
-    
+
+    # Load real crypto data once at the start
+    price_df = load_real_crypto_data()
+    all_windows = sample_price_windows(price_df, n_samples=150, window_size=300)
+
     # Track performance over generations
     best_scores_history = []
     avg_scores_history = []
     
     for gen in range(generations):
-        # Generate multiple fresh scenarios each generation to prevent overfitting
-        scenarios = generate_multiple_scenarios(n_scenarios=3, length=200)
+        scenarios = all_windows
 
         # Evaluate each agent across all scenarios
         if pool:
-            agent_scores = pool.map(
+            eval_results = pool.map(
                 _evaluate_agent_worker,
                 [(agent, scenarios) for agent in population]
             )
         else:
-            agent_scores = [
+            eval_results = [
                 _evaluate_agent_worker((agent, scenarios)) for agent in population
             ]
+
+        agent_scores = [(agent, score) for agent, score, _ in eval_results]
+        score_lookup = {agent: scores for agent, score, scores in eval_results}
         
         # Sort by performance (higher is better)
         agent_scores.sort(key=lambda x: x[1], reverse=True)
@@ -97,42 +109,40 @@ def evolve(pop_size=10, generations=30, base_neurons=10, mutation_rate=0.1,
               f"Std: {np.std(scores):.3f}")
         
         # Selection: keep top performers
-        n_survivors = pop_size // 2
-        survivors = [agent for agent, _ in agent_scores[:n_survivors]]
-        
-        # Create children through mutation
+        n_survivors = min(5, pop_size)
+        top_entries = agent_scores[:n_survivors]
+
+        survivors = []
+        for agent, score in top_entries:
+            parent_scores = score_lookup[agent]
+            child = mutate_agent(agent, 0.01, mutation_strength)
+            _, child_score, child_scores = _evaluate_agent_worker((child, scenarios))
+            try:
+                from scipy.stats import ttest_rel
+                _, p_val = ttest_rel(child_scores, parent_scores)
+            except Exception:
+                p_val = 1.0
+            if child_score > score and p_val < 0.05:
+                survivors.append(child)
+            else:
+                survivors.append(agent)
+
+        # Create additional children to restore population size
         children = []
-        for _ in range(pop_size - n_survivors):
-            # Select parent with tournament selection (more robust than pure random)
-            tournament_size = 3
-            tournament_candidates = random.sample(survivors, min(tournament_size, len(survivors)))
-            # Re-evaluate tournament candidates to pick parent
-            tournament_scores = [(agent, score) for agent, score in agent_scores 
-                               if agent in tournament_candidates]
-            parent = max(tournament_scores, key=lambda x: x[1])[0]
-            if gen % 10 == 0 and _ == range(pop_size - n_survivors)[0]:
-                print(f'Best agent neuron count: {len(parent.neurons)}')
-            child = mutate_agent(parent, mutation_rate, mutation_strength)
+        while len(children) < pop_size - n_survivors:
+            parent = random.choice(survivors)
+            child = mutate_agent(parent, 0.01, mutation_strength)
             children.append(child)
-        
+
         population = survivors + children
-        
-        # Adaptive mutation: increase mutation if population is stagnating
-        if gen > 5:
-            recent_improvement = best_scores_history[-1] - best_scores_history[-6]
-            if recent_improvement < 0.01:  # Less than 1% improvement in 5 generations
-                mutation_rate = min(mutation_rate * 1.1, 0.05)  # Increase mutation
-                print(f"    Increasing mutation rate to {mutation_rate:.3f}")
-            elif recent_improvement > 0.05:  # Good improvement
-                mutation_rate = np.clip(max(mutation_rate * 0.95, 0.05), 0, .05)  # Decrease mutation
     
     # --- Final evaluation on fresh data ---
     print("\n" + "="*50)
     print("FINAL EVALUATION")
     print("="*50)
     
-    # Generate completely fresh scenarios for final evaluation
-    final_scenarios = generate_multiple_scenarios(n_scenarios=5, length=300)
+    # Generate completely fresh scenarios for final evaluation from real data
+    final_scenarios = sample_price_windows(price_df, n_samples=5, window_size=300)
     
     # Evaluate top 3 agents
     top_agents = [agent for agent, _ in agent_scores[:3]]
@@ -141,18 +151,23 @@ def evolve(pop_size=10, generations=30, base_neurons=10, mutation_rate=0.1,
     for i, agent in enumerate(top_agents):
         scenario_results = []
         for j, scenario in enumerate(final_scenarios):
-            final_value, portfolio_history = evaluate_agent(agent, scenario)
-            buy_hold_value = 1000 * (scenario[-1] / scenario[0])  # Buy and hold performance
-            agent_return = (final_value / 1000.0 - 1) * 100  # Agent return %
-            buy_hold_return = (buy_hold_value / 1000.0 - 1) * 100  # Buy-hold return %
-            
-            scenario_results.append({
-                'final_value': final_value,
-                'portfolio_history': portfolio_history,
-                'agent_return': agent_return,
-                'buy_hold_return': buy_hold_return,
-                'scenario': scenario
-            })
+            coin_returns = []
+            for coin in scenario.columns:
+                prices = scenario[coin].values
+                final_value, portfolio_history = evaluate_agent(agent, prices)
+                buy_hold_value = 1000 * (prices[-1] / prices[0])
+                agent_return = (final_value / 1000.0 - 1) * 100
+                buy_hold_return = (buy_hold_value / 1000.0 - 1) * 100
+
+                scenario_results.append({
+                    'final_value': final_value,
+                    'portfolio_history': portfolio_history,
+                    'agent_return': agent_return,
+                    'buy_hold_return': buy_hold_return,
+                    'scenario': scenario[coin].values,
+                    'coin': coin
+                })
+                coin_returns.append(agent_return)
         
         # Calculate statistics
         agent_returns = [r['agent_return'] for r in scenario_results]
@@ -243,4 +258,4 @@ def evolve(pop_size=10, generations=30, base_neurons=10, mutation_rate=0.1,
     return best_agent, final_results
 
 if __name__ == '__main__':
-    evolve(generations=100_000)
+    evolve()
